@@ -1,23 +1,18 @@
 name: antdea
-
 on:
-  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
-
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install dependencies
-        run: pip install ccxt
-      - name: Run bot
+      - run: pip install ccxt
+      - run: python main.py
         env:
           MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
           MEXC_SECRET: ${{ secrets.MEXC_SECRET }}
-        run: python main.py
