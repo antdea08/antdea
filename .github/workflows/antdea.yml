@@ -1,23 +1,26 @@
 name: antdea
 on:
   schedule:
-    - cron: '*/15 * * * *' # <-- INI KUNCINYA, tiap 15 menit
+    - cron: '*/15 * * * *' # gue ganti 15 menit biar gak di-banned
   workflow_dispatch:
   push:
     branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
-        run: pip install -r requirements.txt
-      - name: Run bot
-        run: python main.py
+      - run: pip install -r requirements.txt
+      - run: python main.py
         env:
           MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
           MEXC_SECRET: ${{ secrets.MEXC_SECRET }}
@@ -25,6 +28,8 @@ jobs:
         run: |
           git config user.name "bot"
           git config user.email "bot@bot.com"
-          git add entry.json || true
-          git commit -m "update entry" || true
-          git push || true
+          if [ -f entry.json ]; then
+            git add entry.json
+            git commit -m "update entry" || true
+            git push || true
+          fi
