@@ -34,8 +34,8 @@ try:
     price = ticker['last']
 
     balance = exchange.fetch_balance()
-    usdt = float(balance['USDT']['free'])
-    doge = float(balance['DOGE']['free'])
+    usdt = float(balance.get('USDT',{}.get('free',0)or 0)
+    doge = float(balance.get('DOGE',{}.get('free',0)or 0)
 
     print(f"--- CEK AKTIF ---")
     print(f"Harga DOGE terakhir: {price}")
