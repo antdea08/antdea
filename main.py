@@ -1,53 +1,124 @@
-import ccxt, os, json, pandas as pd
+import ccxt, os, time, json, logging
+import pandas as pd
 from datetime import datetime
 
-SYMBOL='DOGE/USDT'
-exchange=ccxt.mexc({'apiKey':os.getenv('MEXC_API_KEY'),'secret':os.getenv('MEXC_SECRET'),'enableRateLimit':True})
+# =================== KONFIGURASI ===================
+SYMBOL     = 'DOGE/USDT'
+TIMEFRAME  = '5m'
+LIMIT      = 100
+BUY_FRAC   = 0.95         # % USDT buat beli
+SL_PCT     = 0.03         # stop-loss 3% dari entry (DULU 8% UDAH DIBUANG)
+# TP_PCT   = 0.15         # take-profit +15% UDAH DIBUANG - GANTI CROSSING
+STATE_FILE = 'state.json'  # nyimpen entry price
+DRY_RUN    = True          # True = simulasi, False = real
+DEFAULT_MIN_COST = 1.1
+MIN_POS_BUF      = 0.000001
+# ===================================================
 
-def load_entry():
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+log = logging.getLogger('doge-bot')
+
+exchange = ccxt.mexc({
+    'apiKey': os.getenv('MEXC_API_KEY'),
+    'secret': os.getenv('MEXC_SECRET'),
+    'enableRateLimit': True,
+})
+
+def load_state():
     try:
-        if os.path.exists('entry.json'):
-            return json.load(open('entry.json'))['entry']
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                return json.load(f).get('entry')
     except: pass
     return None
 
-def save_entry(p):
-    json.dump({'entry':p,'time':str(datetime.now())}, open('entry.json','w'))
+def save_state(entry):
+    try:
+        with open(STATE_FILE, 'w') as f:
+            json.dump({'entry': entry, 'time': str(datetime.now())}, f)
+    except Exception as e:
+        log.error(f"Gagal save state: {e}")
 
-c=exchange.fetch_ohlcv(SYMBOL,'5m',limit=100)
-df=pd.DataFrame(c,columns=['t','o','h','l','c','v'])
-df['e9']=df['c'].ewm(span=9).mean()
-df['e21']=df['c'].ewm(span=21).mean()
-last,prev=df.iloc[-1],df.iloc[-2]
-price=float(last['c'])
-cross_up=prev['e9']<=prev['e21'] and last['e9']>last['e21']
-cross_down=prev['e9']>=prev['e21'] and last['e9']<last['e21']
+def place_order(side, symbol, amount, price, dry=D RY_RUN):
+    if dry:
+        log.info(f"[DRY_RUN] {side.upper()} {amount} {symbol} @ {price}")
+        return {'average': price}
+    try:
+        if side == 'buy':
+            return exchange.create_market_buy_order(symbol, amount)
+        else:
+            return exchange.create_market_sell_order(symbol, amount)
+    except Exception as e:
+        log.error(f"Order {side} GAGAL: {type(e).name}: {e}")
+        return None
 
-bal=exchange.fetch_balance()
-usdt=float(bal.get('USDT',{}).get('free',0) or 0)
-doge=float(bal.get('DOGE',{}).get('free',0) or 0)
-entry=load_entry()
+def main():
+    try:
+        candles = exchange.fetch_ohlcv(SYMBOL, TIMEFRAME, limit=LIMIT)
+        df = pd.DataFrame(candles, columns=['t','o','h','l','c','v'])
+        df['ema9']  = df['c'].ewm(span=9, adjust=False).mean()
+        df['ema21'] = df['c'].ewm(span=21, adjust=False).mean()
 
-print(f"{datetime.now()} | H:{price:.6f} E9:{last['e9']:.6f} E21:{last['e21']:.6f} | UP:{cross_up} DOWN:{cross_down}")
-print(f"USDT:{usdt:.2f} DOGE:{doge:.4f} Entry:{entry}")
+        last, prev = df.iloc[-1], df.iloc[-2]
+        price = float(last['c'])
+        e9, e21 = float(last['ema9']), float(last['ema21'])
+        pe9, pe21 = float(prev['ema9']), float(prev['ema21'])
 
-if doge*price>1 and entry:
-    if price<=entry*0.97:
-        amt=exchange.amount_to_precision(SYMBOL,doge)
-        exchange.create_market_sell_order(SYMBOL,amt)
-        save_entry(None)
-        print(">> JUAL SL 3%")
-    elif cross_down:
-        amt=exchange.amount_to_precision(SYMBOL,doge)
-        exchange.create_market_sell_order(SYMBOL,amt)
-        save_entry(None)
-        print(">> JUAL TP CROSS")
-    else: print(">> HOLD DOGE")
-elif cross_up:
-    if usdt>=1.1:
-        cost=round(usdt*0.95,2)
-        o=exchange.create_market_buy_order(SYMBOL,cost)
-        save_entry(float(o.get('average') or price))
-        print(f">> BUY {cost} USDT @ {price}")
-    else: print(f">> GAGAL BUY, USDT {usdt} kurang dari 5")
-else: print(">> HOLD, tunggu cross_up")
+        cross_up = pe9 <= pe21 and e9 > e21
+        cross_down = pe9 >= pe21 and e9 < e21
+
+        balance = exchange.fetch_balance()
+        usdt = float(balance.get('USDT', {}).get('free', 0) or 0)
+        doge = float(balance.get('DOGE', {}).get('free', 0) or 0)
+        doge_value = doge * price
+
+        market = exchange.market(SYMBOL)
+        min_cost = market['limits']['cost']['min'] or DEFAULT_MIN_COST
+        min_qty = market['limits']['amount']['min'] or 0
+
+        entry = load_state()
+        pnl = (price - entry) / entry if entry else 0
+
+        log.info(f"--- CEK AKTIF --- Harga:{price:.6f} EMA9:{e9:.6f} EMA21:{e21:.6f} CrossUp:{cross_up} CrossDown:{cross_down}")
+        log.info(f"Saldo USDT:{usdt:.2f} DOGE:{doge:.4f} Entry:{entry} PnL:{pnl*100:+.2f}%")
+
+        # === PUNYA POSISI ===
+        if doge_value > 1 and entry is not None:
+            # 1. SL 3% (YANG LAMA 8% UDAH DIBUANG)
+            if price <= entry * (1 - SL_PCT):
+                log.info(f"🔻 SL 3% dipicu ({pnl*100:+.2f}%)")
+                amount = exchange.amount_to_precision(SYMBOL, max(doge - MIN_POS_BUF, 0))
+                if place_order('sell', SYMBOL, amount, price):
+                    save_state(None)
+            # 2. TP CROSSING (YANG LAMA TP 15% UDAH DIBUANG)
+            elif cross_down:
+                log.info(f"↩ TP CROSSING dipicu ({pnl*100:+.2f}%)")
+                amount = exchange.amount_to_precision(SYMBOL, max(doge - MIN_POS_BUF, 0))
+                if place_order('sell', SYMBOL, amount, price):
+                    save_state(None)
+            else:
+                log.info("HOLD - nunggu SL 3% / TP Crossing")
+
+        # === BELUM PUNYA POSISI ===
+        else:
+            if entry is not None and doge <= min_qty:
+                log.info("State kebawa entry tapi DOGE kosong - reset")
+                save_state(None)if cross_up:
+                if usdt >= min_cost:
+                    cost = round(usdt * BUY_FRAC, 2)
+                    if cost >= min_cost:
+                        order = place_order('buy', SYMBOL, cost, price)
+                        if order:
+                            fill_price = float(order.get('average') or price)
+                            save_state(fill_price)
+                            log.info(f"🚀 BUY {cost} USDT @ {fill_price}")
+                else:
+                    log.warning(f"USDT {usdt:.2f} < min_cost {min_cost} - skip")
+            else:
+                log.info("HOLD - nunggu cross_up")
+
+    except Exception as e:
+        log.error(f"GAGAL: {type(e).name}: {e}")
+
+if name == 'main':
+    main()
