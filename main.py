@@ -15,9 +15,15 @@ exchange = ccxt.mexc({
 })
 
 def load_entry():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE,'r') as f:
-            return json.load(f).get('entry')
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE,'r') as f:
+                data = f.read().strip()
+                if not data:
+                    return None
+                return json.loads(data).get('entry')
+    except:
+        return None
     return None
 
 def save_entry(p):
@@ -42,7 +48,6 @@ entry = load_entry()
 print(f"{datetime.now()} | Harga: {price:.6f} | USDT: {usdt:.2f} | DOGE: {doge:.4f} | Entry: {entry}")
 print(f"EMA9: {last['ema9']:.6f} | EMA21: {last['ema21']:.6f} | Up: {cross_up} | Down: {cross_down}")
 
-# JUAL
 if doge * price > 1 and entry:
     if price <= entry * (1 - SL_PCT):
         amt = exchange.amount_to_precision(SYMBOL, doge)
@@ -54,7 +59,6 @@ if doge * price > 1 and entry:
         exchange.create_market_sell_order(SYMBOL, amt)
         save_entry(None)
         print(f"TP Crossing JUAL")
-# BELI - SUDAH GUE GANTI JADI USDT
 elif cross_up and usdt >= 1:
     cost = round(usdt * BUY_FRAC, 2)
     order = exchange.create_order(SYMBOL, 'market', 'buy', None, None, {'quoteOrderQty': cost})
