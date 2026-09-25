@@ -91,5 +91,5 @@ def main():
     except Exception as e:
         log.error(f"GAGAL: {e}")
 
-if name == 'main':
+if __name__ == 'main':
     main()
