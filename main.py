@@ -1,4 +1,3 @@
-ShielZ07:
 import ccxt, os, time, json, logging
 import pandas as pd
 from datetime import datetime
@@ -101,9 +100,7 @@ def main():
                 save_state(None)
             if cross_up:
                 if usdt >= min_cost:
-                    cost = round(usdt * BUY_FRAC, 2)
-
-if cost >= min_cost:
+                    cost = round(usdt * BUY_FRAC, 2)if cost >= min_cost:
                         order = place_order('buy', SYMBOL, cost, price)
                         if order:
                             fill_price = float(order.get('average') or price)
