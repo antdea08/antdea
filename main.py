@@ -1,3 +1,6 @@
+import os
+import ccxt
+
 print("=== antdea M5 EMA 9/21 FIX ===")
 
 API_KEY = os.getenv('MEXC_API_KEY')
@@ -17,48 +20,41 @@ def ema(data, period):
 
 try:
     # Candle M5
-    candles = exchange.fetch_ohlcv('DOGE/USDT', '5m', limit=50)
-    close = [c[4] for c in candles]
-    ema9 = ema(close, 9)
-    ema21 = ema(close, 21)
-    ema9 = ema9[-len(ema21):]
+    candles = exchange.fetch_ohlcv('DOGE/USDT', '5m', limit=100)
+    closes = [c[4] for c in candles]
 
-    print(f"Harga: {close[-1]} | EMA9: {ema9[-1]:.6f} | EMA21: {ema21[-1]:.6f}")
+    ema9 = ema(closes, 9)
+    ema21 = ema(closes, 21)
 
-    bal = exchange.fetch_balance()
-    usdt = bal.get('USDT', {}).get('free', 0) or 0
-    doge = bal.get('DOGE', {}).get('free', 0) or 0
-    print(f"USDT: {usdt} | DOGE: {doge}")
+    last_ema9 = ema9[-1]
+    last_ema21 = ema21[-1]
+    prev_ema9 = ema9[-2]
+    prev_ema21 = ema21[-2]
 
-    buy_signal = ema9[-1] > ema21[-1] and ema9[-2] <= ema21[-2]
-    sell_signal = ema9[-1] < ema21[-1] and ema9[-2] >= ema21[-2]
+    print(f"EMA9: {last_ema9} | EMA21: {last_ema21}")
 
-    # Cek -3%
-    stop_loss = False
-    try:
-        trades = exchange.fetch_my_trades('DOGE/USDT', limit=1)
-        if trades and doge > 1:
-            last = trades[0]['price']
-            pct = (close[-1] - last) / last * 100
-            print(f"Last buy {last} | {pct:.2f}%")
-            if pct <= -3:
-                stop_loss = True
-    except Exception as e:
-        print(f"Skip cek rugi: {e}")
+    balance = exchange.fetch_balance()
+    usdt = balance['USDT']['free'] if 'USDT' in balance else 0
+    doge = balance['DOGE']['free'] if 'DOGE' in balance else 0
 
-    if buy_signal and float(usdt) >= 1.1:
-        amt = 1.1 / close[-1]
-        print(f"BUY SIGNAL! {amt}")
-        exchange.create_market_buy_order('DOGE/USDT', amt)
-        print("REAL BUY EKSEKUSI!")
-    elif (sell_signal or stop_loss) and float(doge) > 1:
-        print(f"SELL SIGNAL! Reason: {'Cross' if sell_signal else '-3%'}")
-        exchange.create_market_sell_order('DOGE/USDT', doge)
-        print("REAL SELL EKSEKUSI!")
+    # Golden cross = BUY
+    if prev_ema9 <= prev_ema21 and last_ema9 > last_ema21:
+        if usdt > 1:
+            print(f"BUY signal! USDT: {usdt}")
+            # exchange.create_market_buy_order('DOGE/USDT', usdt * 0.9 / closes[-1])
+        else:
+            print("BUY signal tapi USDT kurang")
+
+    # Death cross = SELL
+    elif prev_ema9 >= prev_ema21 and last_ema9 < last_ema21:
+        if doge > 1:
+            print(f"SELL signal! DOGE: {doge}")
+            # exchange.create_market_sell_order('DOGE/USDT', doge)
+        else:
+            print("SELL signal tapi DOGE kurang")
+
     else:
-        print("No signal - standby")
+        print("No cross, hold")
 
 except Exception as e:
-    print(f"ERROR UTAMA: {e}")
-
-print("=== DONE ===")
+    print(f"Error: {e}")
