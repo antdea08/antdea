@@ -1,7 +1,9 @@
 import os
 import ccxt
+from datetime import datetime
 
 print("=== antdea M5 EMA 9/21 LIVE ===")
+print(f"Waktu cek: {datetime.now()}")
 
 API_KEY = os.getenv('MEXC_API_KEY')
 API_SECRET = os.getenv('MEXC_SECRET')
@@ -27,26 +29,36 @@ try:
     last_ema9, last_ema21 = ema9[-1], ema21[-1]
     prev_ema9, prev_ema21 = ema9[-2], ema21[-2]
 
-    print(f"EMA9: {last_ema9} | EMA21: {last_ema21}")
+    # CEK HARGA TERAKHIR LANGSUNG DARI TICKER (paling update)
+    ticker = exchange.fetch_ticker('DOGE/USDT')
+    price = ticker['last']
 
     balance = exchange.fetch_balance()
-    usdt = balance['USDT']['free']
-    doge = balance['DOGE']['free']
-    price = closes[-1]
-    print(f"Balance USDT: {usdt} | DOGE: {doge}")
+    usdt = float(balance['USDT']['free'])
+    doge = float(balance['DOGE']['free'])
+
+    print(f"--- CEK AKTIF ---")
+    print(f"Harga DOGE terakhir: {price}")
+    print(f"EMA9: {last_ema9} | EMA21: {last_ema21}")
+    print(f"Saldo USDT: {usdt} | Saldo DOGE: {doge}")
+    print(f"Total asset DOGE kalo dirupiahin USDT: {(doge * price) + usdt:.4f} USDT")
 
     # GOLDEN CROSS = BUY
     if prev_ema9 <= prev_ema21 and last_ema9 > last_ema21:
         if usdt > 1.1:
             amount = (usdt * 0.95) / price
-            print(f"BUY {amount} DOGE")
+            print(f"🚀 SIGNAL BUY -> Beli {amount} DOGE @ {price}")
             exchange.create_market_buy_order('DOGE/USDT', amount)
+        else:
+            print(f"GOLDEN CROSS tapi saldo USDT kurang: {usdt}")
 
     # DEATH CROSS = SELL
     elif prev_ema9 >= prev_ema21 and last_ema9 < last_ema21:
         if doge > 1:
-            print(f"SELL {doge} DOGE")
+            print(f"🔻 SIGNAL SELL -> Jual {doge} DOGE @ {price}")
             exchange.create_market_sell_order('DOGE/USDT', doge)
+        else:
+            print(f"DEATH CROSS tapi saldo DOGE kurang: {doge}")
     else:
         print("No cross, hold")
 
