@@ -3,6 +3,8 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,3 +18,10 @@ jobs:
         env:
           MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
           MEXC_SECRET: ${{ secrets.MEXC_SECRET }}
+      - name: Save entry
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@bot.com"
+          git add entry.json || true
+          git commit -m "update entry" || true
+          git push || true
