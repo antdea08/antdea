@@ -44,7 +44,7 @@ if doge*price>1 and entry:
         print(">> JUAL TP CROSS")
     else: print(">> HOLD DOGE")
 elif cross_up:
-    if usdt>=5:
+    if usdt>=1.1:
         cost=round(usdt*0.95,2)
         o=exchange.create_market_buy_order(SYMBOL,cost)
         save_entry(float(o.get('average') or price))
