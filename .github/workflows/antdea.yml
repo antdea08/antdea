@@ -1,35 +1,39 @@
-name: antdea
-on:
-  schedule:
-    - cron: '*/15 * * * *' # gue ganti 15 menit biar gak di-banned
-  workflow_dispatch:
-  push:
-    branches: [main]
+name: DOGE Trading Bot
 
-permissions:
-  contents: write
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
-  build:
+  trade:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: python main.py
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot
         env:
           MEXC_API_KEY: ${{ secrets.MEXC_API_KEY }}
           MEXC_SECRET: ${{ secrets.MEXC_SECRET }}
-      - name: Save entry
+        run: python main.py
+
+      - name: Save entry state
         run: |
-          git config user.name "bot"
-          git config user.email "bot@bot.com"
-          if [ -f entry.json ]; then
-            git add entry.json
-            git commit -m "update entry" || true
-            git push || true
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add entry.json
+          git diff --cached --quiet || git commit -m "Update bot state"
+          git push
